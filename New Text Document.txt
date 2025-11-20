@@ -1,0 +1,6 @@
+cd backend/AdjustLog.Api
+dotnet run
+
+
+cd frontend
+npm run dev
