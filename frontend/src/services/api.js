@@ -1,6 +1,25 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+// Auto-detect API URL based on current hostname
+const getApiBaseUrl = () => {
+  // If environment variable is set, use it
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  
+  // Auto-detect based on current hostname
+  const hostname = window.location.hostname
+  const protocol = window.location.protocol
+  
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api'
+  } else {
+    // Use the same hostname and protocol, but port 5000 for API
+    return `${protocol}//${hostname}:5000/api`
+  }
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 const api = axios.create({
   baseURL: API_BASE_URL,
