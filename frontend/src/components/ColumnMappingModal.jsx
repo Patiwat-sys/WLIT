@@ -33,7 +33,10 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
     try {
       // Load more rows for preview (up to 500 rows for better preview)
       // If file is very large, user can still see a good sample
-      const data = await getExcelRawData(file, sheetName, 500)
+      // Pass current row settings to get correct preview
+      const headerRow = mapping.HeaderRow ?? 2
+      const dataStartRow = mapping.DataStartRow ?? 4
+      const data = await getExcelRawData(file, sheetName, 500, headerRow > 0 ? headerRow : null, dataStartRow)
       setRawData(data)
       
       // Auto-detect columns
@@ -131,10 +134,43 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
   }
 
   const handleMappingChange = (field, value) => {
-    setMapping(prev => ({
-      ...prev,
-      [field]: value === '' ? null : parseInt(value)
-    }))
+    const newValue = value === '' ? null : parseInt(value)
+    setMapping(prev => {
+      const updated = {
+        ...prev,
+        [field]: newValue
+      }
+      
+      // If HeaderRow, MetadataRow, or DataStartRow changed, reload raw data
+      if (field === 'HeaderRow' || field === 'MetadataRow' || field === 'DataStartRow') {
+        // Use setTimeout to avoid reloading during the state update
+        setTimeout(() => {
+          loadRawDataWithSettings(updated)
+        }, 100)
+      }
+      
+      return updated
+    })
+  }
+
+  const loadRawDataWithSettings = async (settings) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const headerRow = settings.HeaderRow ?? 2
+      const dataStartRow = settings.DataStartRow ?? 4
+      const data = await getExcelRawData(file, sheetName, 500, headerRow > 0 ? headerRow : null, dataStartRow)
+      setRawData(data)
+      
+      // Re-run auto-detect if headers changed
+      if (settings.HeaderRow !== mapping.HeaderRow && data.headers && data.previewRows) {
+        autoDetectColumns(data)
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load Excel data')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleConfirm = () => {
@@ -189,6 +225,24 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
   const getPreviewValue = (colIndex, rowIndex = 0) => {
     if (!rawData || !rawData.previewRows || !rawData.previewRows[rowIndex]) return ''
     return rawData.previewRows[rowIndex][`col${colIndex}`] || ''
+  }
+
+  const formatCellValue = (value, colNum) => {
+    if (value === null || value === undefined || value === '') return ''
+    
+    // Check if this column is mapped to From, To, or Thickness
+    const isFrom = mapping.From === colNum
+    const isTo = mapping.To === colNum
+    const isThickness = mapping.Thickness === colNum
+    
+    if (isFrom || isTo || isThickness) {
+      const numValue = parseFloat(value)
+      if (!isNaN(numValue)) {
+        return numValue.toFixed(2)
+      }
+    }
+    
+    return String(value)
   }
 
   const requiredFields = ['From', 'To']
@@ -257,6 +311,78 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
               >
                 Auto-detect Columns
               </button>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <h3 style={{ marginBottom: '12px' }}>Row Settings</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ marginBottom: '4px', fontWeight: 'bold' }}>
+                    Header Row
+                    <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal', marginLeft: '4px' }}>
+                      (0 = no header)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={mapping.HeaderRow ?? 2}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : parseInt(e.target.value)
+                      handleMappingChange('HeaderRow', val === null ? '' : val)
+                    }}
+                    style={{
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ marginBottom: '4px', fontWeight: 'bold' }}>
+                    Survey Row
+                    <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal', marginLeft: '4px' }}>
+                      (0 = no Survey)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={mapping.MetadataRow ?? 3}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : parseInt(e.target.value)
+                      handleMappingChange('MetadataRow', val === null ? '' : val)
+                    }}
+                    style={{
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ marginBottom: '4px', fontWeight: 'bold' }}>
+                    Data Start Row
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={mapping.DataStartRow ?? 4}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : parseInt(e.target.value)
+                      handleMappingChange('DataStartRow', val === null ? '' : val)
+                    }}
+                    style={{
+                      padding: '6px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
             <div style={{ marginBottom: '20px' }}>
@@ -369,6 +495,7 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
                           const colNum = colIndex + 1
                           const value = row[`col${colNum}`] || ''
                           const isMapped = Object.values(mapping).includes(colNum)
+                          const formattedValue = formatCellValue(value, colNum)
                           return (
                             <td
                               key={colIndex}
@@ -380,7 +507,7 @@ function ColumnMappingModal({ isOpen, onClose, onConfirm, file, sheetName }) {
                               }}
                               title={String(value)}
                             >
-                              {String(value).length > 30 ? String(value).substring(0, 30) + '...' : String(value)}
+                              {formattedValue.length > 30 ? formattedValue.substring(0, 30) + '...' : formattedValue}
                             </td>
                           )
                         })}

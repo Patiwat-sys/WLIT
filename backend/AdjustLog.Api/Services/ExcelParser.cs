@@ -5,16 +5,16 @@ namespace AdjustLog.Api.Services;
 
 public class ExcelParser : IExcelParser
 {
-    public (List<LithologyInterval> Intervals, WellMetadata Metadata) Parse(string filePath)
+    public (List<LithologyInterval> Intervals, WellMetadata Metadata) Parse(string filePath, int? headerRow = null, int? metadataRow = null, int? dataStartRow = null)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         
         using var package = new ExcelPackage(new FileInfo(filePath));
         var worksheet = package.Workbook.Worksheets[0];
-        return ParseWorksheet(worksheet);
+        return ParseWorksheet(worksheet, headerRow, metadataRow, dataStartRow);
     }
 
-    public (List<LithologyInterval> Intervals, WellMetadata Metadata) Parse(string filePath, string sheetName)
+    public (List<LithologyInterval> Intervals, WellMetadata Metadata) Parse(string filePath, string sheetName, int? headerRow = null, int? metadataRow = null, int? dataStartRow = null)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         
@@ -24,7 +24,7 @@ public class ExcelParser : IExcelParser
         {
             throw new ArgumentException($"Sheet '{sheetName}' not found in the Excel file");
         }
-        return ParseWorksheet(worksheet);
+        return ParseWorksheet(worksheet, headerRow, metadataRow, dataStartRow);
     }
 
     public List<string> GetSheetNames(string filePath)
@@ -35,7 +35,7 @@ public class ExcelParser : IExcelParser
         return package.Workbook.Worksheets.Select(ws => ws.Name).ToList();
     }
 
-    public List<Dictionary<string, object?>> GetPreviewData(string filePath, string sheetName, int maxRows = 50)
+    public List<Dictionary<string, object?>> GetPreviewData(string filePath, string sheetName, int maxRows = 50, int? headerRow = null, int? dataStartRow = null)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         
@@ -47,7 +47,7 @@ public class ExcelParser : IExcelParser
         }
 
         var previewData = new List<Dictionary<string, object?>>();
-        var startRow = 4; // Assuming data starts at row 4
+        var startRow = dataStartRow ?? 4; // Default to row 4 if not specified
         
         // Column mapping: B=2, C=3, D=4, E=5, H=8, V=22, AB=28, AC=29, AD=30
         var columnMap = new Dictionary<string, int>
@@ -112,28 +112,32 @@ public class ExcelParser : IExcelParser
         return previewData;
     }
 
-    private (List<LithologyInterval> Intervals, WellMetadata Metadata) ParseWorksheet(ExcelWorksheet worksheet)
+    private (List<LithologyInterval> Intervals, WellMetadata Metadata) ParseWorksheet(ExcelWorksheet worksheet, int? headerRow = null, int? metadataRow = null, int? dataStartRow = null)
     {
+        // Use defaults if not specified
+        var metadataRowNum = metadataRow ?? 3; // Default metadata row is 3
+        var startRow = dataStartRow ?? 4; // Default data start row is 4
+        var headerRowNum = headerRow ?? 2; // Default header row is 2
 
-        // Extract metadata from row 3 (index 3)
-        var metadata = new WellMetadata
+        // Extract metadata from specified row (if metadataRow is provided and > 0)
+        var metadata = new WellMetadata();
+        if (metadataRowNum > 0)
         {
-            WellId = GetCellValue(worksheet, 1, 3) ?? "",
-            Easting = ParseDouble(GetCellValue(worksheet, 2, 3)),
-            Northing = ParseDouble(GetCellValue(worksheet, 3, 3)),
-            Elevation = ParseDouble(GetCellValue(worksheet, 4, 3)),
-            Azimuth = ParseDouble(GetCellValue(worksheet, 5, 3)),
-            DipDegree = ParseDouble(GetCellValue(worksheet, 6, 3)),
-            Depth = ParseDouble(GetCellValue(worksheet, 7, 3)),
-            XSectionLine = GetCellValue(worksheet, 23, 3), // Column W (index 23)
-            Year = GetCellValue(worksheet, 24, 3), // Column X (index 24)
-            Geologist = GetCellValue(worksheet, 25, 3), // Column Y (index 25)
-            GeophysicalDepth = ParseDouble(GetCellValue(worksheet, 26, 3)), // Column Z (index 26)
-        };
+            metadata.WellId = GetCellValue(worksheet, 1, metadataRowNum) ?? "";
+            metadata.Easting = ParseDouble(GetCellValue(worksheet, 2, metadataRowNum));
+            metadata.Northing = ParseDouble(GetCellValue(worksheet, 3, metadataRowNum));
+            metadata.Elevation = ParseDouble(GetCellValue(worksheet, 4, metadataRowNum));
+            metadata.Azimuth = ParseDouble(GetCellValue(worksheet, 5, metadataRowNum));
+            metadata.DipDegree = ParseDouble(GetCellValue(worksheet, 6, metadataRowNum));
+            metadata.Depth = ParseDouble(GetCellValue(worksheet, 7, metadataRowNum));
+            metadata.XSectionLine = GetCellValue(worksheet, 23, metadataRowNum); // Column W (index 23)
+            metadata.Year = GetCellValue(worksheet, 24, metadataRowNum); // Column X (index 24)
+            metadata.Geologist = GetCellValue(worksheet, 25, metadataRowNum); // Column Y (index 25)
+            metadata.GeophysicalDepth = ParseDouble(GetCellValue(worksheet, 26, metadataRowNum)); // Column Z (index 26)
+        }
 
-        // Parse data rows (starting from row 4, index 4)
+        // Parse data rows (starting from specified row)
         var intervals = new List<LithologyInterval>();
-        var startRow = 4;
 
         for (int row = startRow; row <= worksheet.Dimension?.End.Row; row++)
         {
@@ -173,11 +177,20 @@ public class ExcelParser : IExcelParser
             };
 
             // Add additional columns 1-20, 22, 28-30
+            // Only use header row if it's specified and > 0
             for (int col = 1; col <= 20; col++)
             {
-                var header = GetCellValue(worksheet, col, 2); // Row 2 for headers
-                if (!string.IsNullOrWhiteSpace(header))
+                if (headerRowNum > 0)
                 {
+                    var header = GetCellValue(worksheet, col, headerRowNum);
+                    if (!string.IsNullOrWhiteSpace(header))
+                    {
+                        interval.AdditionalFields[$"col{col}"] = GetCellValue(worksheet, col, row);
+                    }
+                }
+                else
+                {
+                    // If no header row, just store all columns
                     interval.AdditionalFields[$"col{col}"] = GetCellValue(worksheet, col, row);
                 }
             }
@@ -258,7 +271,7 @@ public class ExcelParser : IExcelParser
         return ParseWorksheetWithMapping(worksheet, mapping);
     }
 
-    public Dictionary<string, object> GetRawData(string filePath, string sheetName, int maxRows = 50)
+    public Dictionary<string, object> GetRawData(string filePath, string sheetName, int maxRows = 50, int? headerRow = null, int? dataStartRow = null)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         
@@ -271,24 +284,32 @@ public class ExcelParser : IExcelParser
 
         var result = new Dictionary<string, object>();
         
-        // Get all column headers (default to row 2)
+        // Get all column headers (default to row 2 if not specified, or null if no header row)
         var maxCol = worksheet.Dimension?.End.Column ?? 0;
-        var headerRow = 2; // Default header row
-        var dataStartRow = 4; // Default data start row
+        var headerRowNum = headerRow ?? 2; // Default header row is 2, but can be null if no header
+        var dataStartRowNum = dataStartRow ?? 4; // Default data start row is 4
         
         var headers = new List<string>();
         for (int col = 1; col <= maxCol; col++)
         {
-            var headerValue = GetCellValue(worksheet, col, headerRow);
-            headers.Add(headerValue ?? $"Column {GetColumnLetter(col)}");
+            // If headerRow is null or 0, use column letters as headers
+            if (headerRowNum <= 0)
+            {
+                headers.Add($"Column {GetColumnLetter(col)}");
+            }
+            else
+            {
+                var headerValue = GetCellValue(worksheet, col, headerRowNum);
+                headers.Add(headerValue ?? $"Column {GetColumnLetter(col)}");
+            }
         }
         result["headers"] = headers;
         
         // Get preview rows
         var previewRows = new List<Dictionary<string, object?>>();
-        var endRow = Math.Min(dataStartRow + maxRows - 1, worksheet.Dimension?.End.Row ?? dataStartRow);
+        var endRow = Math.Min(dataStartRowNum + maxRows - 1, worksheet.Dimension?.End.Row ?? dataStartRowNum);
         
-        for (int row = dataStartRow; row <= endRow; row++)
+        for (int row = dataStartRowNum; row <= endRow; row++)
         {
             var rowData = new Dictionary<string, object?>();
             for (int col = 1; col <= maxCol; col++)
@@ -320,7 +341,7 @@ public class ExcelParser : IExcelParser
     {
         // Extract metadata
         var metadata = new WellMetadata();
-        if (mapping.MetadataRow.HasValue)
+        if (mapping.MetadataRow.HasValue && mapping.MetadataRow.Value > 0)
         {
             if (mapping.WellId.HasValue)
                 metadata.WellId = GetCellValue(worksheet, mapping.WellId.Value, mapping.MetadataRow.Value) ?? "";

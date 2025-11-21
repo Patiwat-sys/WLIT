@@ -55,7 +55,12 @@ public class UploadController : ControllerBase
     }
 
     [HttpPost("excel")]
-    public async Task<IActionResult> UploadExcel(IFormFile file, [FromQuery] string? sheetName = null)
+    public async Task<IActionResult> UploadExcel(
+        IFormFile file, 
+        [FromQuery] string? sheetName = null,
+        [FromQuery] int? headerRow = null,
+        [FromQuery] int? metadataRow = null,
+        [FromQuery] int? dataStartRow = null)
     {
         if (file == null || file.Length == 0)
         {
@@ -77,8 +82,8 @@ public class UploadController : ControllerBase
             }
 
             var (intervals, metadata) = string.IsNullOrEmpty(sheetName) 
-                ? _excelParser.Parse(filePath)
-                : _excelParser.Parse(filePath, sheetName);
+                ? _excelParser.Parse(filePath, headerRow, metadataRow, dataStartRow)
+                : _excelParser.Parse(filePath, sheetName, headerRow, metadataRow, dataStartRow);
 
             // Clean up
             System.IO.File.Delete(filePath);
@@ -127,7 +132,12 @@ public class UploadController : ControllerBase
     }
 
     [HttpPost("excel/preview")]
-    public async Task<IActionResult> GetExcelPreview(IFormFile file, [FromQuery] string sheetName, [FromQuery] int maxRows = 50)
+    public async Task<IActionResult> GetExcelPreview(
+        IFormFile file, 
+        [FromQuery] string sheetName, 
+        [FromQuery] int maxRows = 50,
+        [FromQuery] int? headerRow = null,
+        [FromQuery] int? dataStartRow = null)
     {
         if (file == null || file.Length == 0)
         {
@@ -153,7 +163,7 @@ public class UploadController : ControllerBase
                 await file.CopyToAsync(stream);
             }
 
-            var previewData = _excelParser.GetPreviewData(filePath, sheetName, maxRows);
+            var previewData = _excelParser.GetPreviewData(filePath, sheetName, maxRows, headerRow, dataStartRow);
 
             // Clean up
             System.IO.File.Delete(filePath);
@@ -167,7 +177,12 @@ public class UploadController : ControllerBase
     }
 
     [HttpPost("excel/raw-data")]
-    public async Task<IActionResult> GetExcelRawData(IFormFile file, [FromQuery] string sheetName, [FromQuery] int maxRows = 50)
+    public async Task<IActionResult> GetExcelRawData(
+        IFormFile file, 
+        [FromQuery] string sheetName, 
+        [FromQuery] int maxRows = 50,
+        [FromQuery] int? headerRow = null,
+        [FromQuery] int? dataStartRow = null)
     {
         if (file == null || file.Length == 0)
         {
@@ -193,7 +208,7 @@ public class UploadController : ControllerBase
                 await file.CopyToAsync(stream);
             }
 
-            var rawData = _excelParser.GetRawData(filePath, sheetName, maxRows);
+            var rawData = _excelParser.GetRawData(filePath, sheetName, maxRows, headerRow, dataStartRow);
 
             // Clean up
             System.IO.File.Delete(filePath);

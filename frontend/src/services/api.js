@@ -22,13 +22,23 @@ export const uploadLAS = async (file) => {
   return response.data
 }
 
-export const uploadExcel = async (file, sheetName = null) => {
+export const uploadExcel = async (file, sheetName = null, headerRow = null, metadataRow = null, dataStartRow = null) => {
   const formData = new FormData()
   formData.append('file', file)
   
-  const url = sheetName 
+  let url = sheetName 
     ? `/upload/excel?sheetName=${encodeURIComponent(sheetName)}`
     : '/upload/excel'
+  
+  if (headerRow !== null) {
+    url += `${sheetName ? '&' : '?'}headerRow=${headerRow}`
+  }
+  if (metadataRow !== null) {
+    url += `${url.includes('?') ? '&' : '?'}metadataRow=${metadataRow}`
+  }
+  if (dataStartRow !== null) {
+    url += `${url.includes('?') ? '&' : '?'}dataStartRow=${dataStartRow}`
+  }
   
   const response = await api.post(url, formData, {
     headers: {
@@ -65,11 +75,19 @@ export const getExcelPreview = async (file, sheetName, maxRows = 50) => {
   return response.data
 }
 
-export const getExcelRawData = async (file, sheetName, maxRows = 50) => {
+export const getExcelRawData = async (file, sheetName, maxRows = 50, headerRow = null, dataStartRow = null) => {
   const formData = new FormData()
   formData.append('file', file)
   
-  const response = await api.post(`/upload/excel/raw-data?sheetName=${encodeURIComponent(sheetName)}&maxRows=${maxRows}`, formData, {
+  let url = `/upload/excel/raw-data?sheetName=${encodeURIComponent(sheetName)}&maxRows=${maxRows}`
+  if (headerRow !== null) {
+    url += `&headerRow=${headerRow}`
+  }
+  if (dataStartRow !== null) {
+    url += `&dataStartRow=${dataStartRow}`
+  }
+  
+  const response = await api.post(url, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
